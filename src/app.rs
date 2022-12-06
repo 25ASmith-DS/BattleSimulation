@@ -1,9 +1,7 @@
 
 
 
-use std::f64::consts::{TAU, PI};
-
-use graphics::{clear, Transformed, rectangle::{centered_square}, types::Color};
+use graphics::{clear, Transformed, rectangle::{centered_square}, types::Color, Rectangle};
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::RenderArgs;
 
@@ -11,7 +9,7 @@ pub const SCREEN_WIDTH: f64 = 1280.0;
 pub const SCREEN_HEIGHT: f64 = 720.0;
 
 const GRASS_GREEN: [f32; 4] = [0.42, 0.66, 0.2, 1.0];
-const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 0.1];
+const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 0.15];
 const SOLDIER_SIZE: f64 = 4.0;
 const MAX_HEALTH: u32 = 50;
 
@@ -28,10 +26,10 @@ impl App {
     pub fn add_soldier(&mut self, team: Team, legion: SoldierType, pos: [f64; 2]) {
         let id: u64 = self.soldiers.len() as u64;
         self.soldiers.push(Soldier::new(team, legion, pos, match legion {
-            SoldierType::Triarii => {35 * 60}            
-            SoldierType::Principes => {20 * 60}            
-            SoldierType::Hastati => {7 * 60}            
-            SoldierType::Velites => {10}            
+            SoldierType::Triarii => {1 * 60}            
+            SoldierType::Principes => {6 * 60}            
+            SoldierType::Hastati => {3 * 60}            
+            SoldierType::Velites => {30}            
         }, id));
     }
 
@@ -53,31 +51,16 @@ impl App {
             for s in soldiers.iter() {
                 let t = c.transform.clone()
                     .trans(s.x(), s.y());
-                    let rect = centered_square(0.0, 0.0, SOLDIER_SIZE);
                     graphics::rectangle(match s.alive() {
                         true => s.color(),
                         false => BLACK
-                    }, rect, t, g);
+                    }, s.rect, t, g);
             }
 
         });
     }
 
     pub fn update(&mut self) {
-
-        
-        let reds = self.soldiers.iter()
-            .filter(|s| 
-                s.alive() && s.team == Team::Red
-            ).count();
-
-        let blues = self.soldiers.iter()
-            .filter(|s| 
-                s.alive() && s.team == Team::Blue
-            ).count();
-
-        //println!("Red: {}\nBlue: {}", reds, blues);
-
         self.frame += 1;
         for i in 0..self.soldiers.len() {
             if self.soldiers[i].alive() {
@@ -108,10 +91,23 @@ pub struct Soldier {
     team: Team,
     level: f64,
     health: u32,
-    id: u64
+    rect: [f64; 4]
 }
 #[allow(dead_code)]
 impl Soldier {
+
+    fn default() -> Self {
+        Self {
+            legion: SoldierType::Velites,
+            pos: [0.0, 0.0],
+            vel: [0.0, 0.0],
+            state: BattleState::Idle(0),
+            team: Team::Red,
+            level: 0.0,
+            health: 0,
+            rect: [0.0, 0.0, 0.0, 0.0]
+        }
+    }
     
     // Physics coefficients
     const ACCEL: f64 = 0.1;
@@ -128,7 +124,7 @@ impl Soldier {
             team,
             level: random::<f64>() * 2.0 + 1.0,
             health: legion.base_health() + (random::<u32>() % 10) - 5,
-            id
+            rect: centered_square(0.0, 0.0, SOLDIER_SIZE),
         }
     }
 
@@ -148,11 +144,17 @@ impl Soldier {
         }
 
 
+        let hauling_ass = self.state.equals(&BattleState::Retreating(0));
+
+        let bonus = match hauling_ass {
+            false => {1.0}
+            true => {1.5}
+        };
 
         // Update position
         self.pos = [
-            self.x() + self.legion.speed_multiplier() * self.x_vel().min(Soldier::MAX_SPEED).max(-Soldier::MAX_SPEED),
-            self.y() + self.legion.speed_multiplier() * self.y_vel().min(Soldier::MAX_SPEED).max(-Soldier::MAX_SPEED),
+            self.x() + self.legion.speed_multiplier() * bonus * self.x_vel().min(Soldier::MAX_SPEED).max(-Soldier::MAX_SPEED),
+            self.y() + self.legion.speed_multiplier() * bonus * self.y_vel().min(Soldier::MAX_SPEED).max(-Soldier::MAX_SPEED),
         ];
 
         // Update velocity
@@ -166,7 +168,7 @@ impl Soldier {
             let pushx = angle.cos() * (Soldier::PUSH_POWER) * (6.0 - self.distance_from(c)).max(0.0);
             let pushy = angle.sin() * (Soldier::PUSH_POWER) * (6.0 - self.distance_from(c)).max(0.0);
             self.add_velocity(-pushx, -pushy);
-            c.add_velocity(pushx, pushy)
+            c.add_velocity(pushx * bonus * bonus, pushy * bonus * bonus)
         };
 
         self.vel = [
@@ -176,37 +178,62 @@ impl Soldier {
 
 
         self.state = match self.state {
+            BattleState::Retreating(t) => {
+                self.add_velocity(match self.team {
+                    Team::Red => -Soldier::ACCEL,
+                    Team::Blue => Soldier::ACCEL,
+                }, 0.0);
+                BattleState::Retreating(t + 1)
+            }
             BattleState::Dead => { BattleState::Dead }
             BattleState::Idle(t) => {
                 if t == 0 {
-                    // Filter for targetable soldiers
-                    let alive_enemies = others
-                        .into_iter()
-                        .filter(|soldier| 
-                            soldier.alive() && // Target must be alive
-                            soldier.team != self.team // Target must not be teammate
-                        );
                     
-                    // Search for closest available target
-                    let mut closest_opponent: Option<(&mut Soldier, f64)> = None;
-                    for s in alive_enemies {
-                        if let Some((_, prev_dist)) = closest_opponent {
-                            let dist = self.distance_from(s);
-                            if dist < prev_dist {
-                                closest_opponent = Some((s, dist))
-                            }
-                        } else {
-                            let dist = self.distance_from(s);
-                            closest_opponent = Some((s, dist));
-                        }
-                    };
+                    let allies_alive = others.iter().filter(|s|
+                        s.team == self.team && s.alive()
+                    ).count();
 
-                    // Target closest, if available
-                    if let Some((soldier, _)) = closest_opponent {
-                        BattleState::Charging(10, soldier)
+                    let allies_total = others.iter().filter(|s|
+                        s.team == self.team
+                    ).count();
+
+                    if allies_alive as f64/allies_total as f64 > 0.5 && self.legion == SoldierType::Triarii {
+                        BattleState::Idle(10)
                     } else {
-                        BattleState::Idle(5)
+                        // Filter for targetable soldiers
+                        let alive_enemies = others
+                            .into_iter()
+                            .filter(|soldier| 
+                                soldier.alive() && // Target must be alive
+                                soldier.team != self.team && // Target must not be teammate
+                                // !soldier.state.equals(&BattleState::Attacking(0, &mut Soldier::default())) && 
+                                !soldier.state.equals(&BattleState::Defending(0, &mut Soldier::default())) && 
+                                !soldier.state.equals(&BattleState::Retreating(0))
+                            );
+                        
+                        // Search for closest available target
+                        let mut closest_opponent: Option<(&mut Soldier, f64)> = None;
+                        for s in alive_enemies {
+                            if let Some((_, prev_dist)) = closest_opponent {
+                                let dist = self.distance_from(s);
+                                if dist < prev_dist {
+                                    closest_opponent = Some((s, dist))
+                                }
+                            } else {
+                                let dist = self.distance_from(s);
+                                closest_opponent = Some((s, dist));
+                            }
+                        };
+
+                        // Target closest, if available
+                        if let Some((soldier, _)) = closest_opponent {
+                            BattleState::Charging(10, soldier)
+                        } else {
+                            BattleState::Idle(5)
+                        }
                     }
+
+                    
                 } else {
                     BattleState::Idle(t - 1)
                 }
@@ -259,14 +286,7 @@ impl Soldier {
 
                     let battle_won = outcome < winning_chance;
 
-                    // println!("{} {} (lv {:.3}) attacking {} {} (lv {:.3})",
-                    //     self.team.to_string(),
-                    //     self.id,
-                    //     l1,
-                    //     target.team.to_string(),
-                    //     target.id,
-                    //     l2
-                    // );
+                    
 
                     if !battle_won {
                         self.health = 0;
@@ -281,7 +301,11 @@ impl Soldier {
                             Some(x) => {
                                 target.state = BattleState::Dead;
                                 self.health = x;
-                                BattleState::Idle(5)
+                                if self.legion == SoldierType::Velites && random::<f64>() > 0.2 {
+                                    BattleState::Retreating(0)
+                                } else {
+                                    BattleState::Idle(10)
+                                }
                             }
                             None => {
                                 BattleState::Dead
@@ -368,7 +392,7 @@ impl Soldier {
     }
 
     pub fn battle_multiplier(&self) -> f64 {
-        self.legion.battle_bonus() * self.health as f64 / self.legion.base_health() as f64
+        self.legion.battle_bonus() * (self.health as f64 + 5.0) / self.legion.base_health() as f64
     }
 }
 
@@ -381,9 +405,9 @@ pub enum SoldierType {
 } impl SoldierType {
     fn battle_bonus(&self) -> f64 {
         match self {
-            Self::Triarii => {1.6}
-            Self::Principes => {1.3}
-            Self::Hastati => {0.9}
+            Self::Triarii => {2.2}
+            Self::Principes => {1.8}
+            Self::Hastati => {1.5}
             Self::Velites => {1.0}
         }
     }
@@ -420,8 +444,15 @@ pub enum BattleState {
     Charging(u32, *mut Soldier),
     Attacking(u32, *mut Soldier),
     Defending(u32, *mut Soldier),
-    Dead
+    Retreating(u32),
+    Dead,
+} impl BattleState {
+    fn equals(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
 }
+
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Team {
     Red,
