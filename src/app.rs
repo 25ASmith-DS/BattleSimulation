@@ -5,8 +5,8 @@ use graphics::{clear, Transformed, rectangle::{centered_square}, types::Color, R
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::RenderArgs;
 
-pub const SCREEN_WIDTH: f64 = 1280.0;
-pub const SCREEN_HEIGHT: f64 = 720.0;
+pub const SCREEN_WIDTH: f64 = 1920.0;
+pub const SCREEN_HEIGHT: f64 = 1080.0;
 
 const GRASS_GREEN: [f32; 4] = [0.42, 0.66, 0.2, 1.0];
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 0.15];

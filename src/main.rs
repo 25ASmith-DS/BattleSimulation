@@ -30,6 +30,7 @@ fn main() {
         .graphics_api(opengl)
         .exit_on_esc(true)
         .decorated(true)
+        .fullscreen(true)
         .resizable(false)
         .build()
         .unwrap();
@@ -56,7 +57,6 @@ fn main() {
 
     add_block(&mut app, [SCREEN_WIDTH/2.0 - 200.0, 200.0], 5, 7, Red, Velites);
     add_block(&mut app, [SCREEN_WIDTH/2.0 - 200.0, 300.0], 5, 7, Red, Velites);
-    add_block(&mut app, [SCREEN_WIDTH/2.0 - 200.0, 400.0], 5, 7, Red, Velites);
 
     add_block(&mut app, [SCREEN_WIDTH/2.0 + 500.0, 100.0], 5, 9, Blue, Principes);
     add_block(&mut app, [SCREEN_WIDTH/2.0 + 500.0, 200.0], 5, 9, Blue, Principes);
