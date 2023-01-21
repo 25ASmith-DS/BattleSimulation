@@ -1,2 +1,2 @@
 # BattleSimulation
-School project
+School project, pretty messy due to deadline
